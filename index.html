@@ -24,10 +24,19 @@
         th {
             background-color: #f4f4f4;
         }
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
     </style>
 </head>
 <body>
     <h1>Flask Data Viewer</h1>
+
+    <h2>Latest Image</h2>
+    <img id="latestImage" src="" alt="Latest Change Detection Image">
 
     <h2>Image Metadata</h2>
     <table id="imageMetadataTable">
@@ -58,9 +67,20 @@
             try {
                 const flaskUrl = 'http://127.0.0.1:5000';
     
-                // Fetch image metadata
-                let response = await fetch(`${flaskUrl}/get_image_metadata`);
+                // Fetch latest image file name
+                let response = await fetch(`${flaskUrl}/latest-image`);
                 let data = await response.json();
+                let latestImage = document.getElementById('latestImage');
+                
+                if (data && data !== 'No images found') {
+                    latestImage.src = `${flaskUrl}/static/images/${data}`;
+                } else {
+                    latestImage.alt = 'No images available';
+                }
+    
+                // Fetch image metadata
+                response = await fetch(`${flaskUrl}/get_image_metadata`);
+                data = await response.json();
                 let imageMetadataTable = document.getElementById('imageMetadataTable');
                 let imageMetadataTableHead = imageMetadataTable.querySelector('thead tr');
                 let imageMetadataTableBody = imageMetadataTable.querySelector('tbody');

@@ -1,4 +1,6 @@
 import datetime
+from datetime import datetime
+import os
 import cv2
 import requests
 import numpy as np
@@ -26,23 +28,45 @@ def connect_db():
         print(f"Error connecting to database: {e}")
         return None
 
-def update_flask_data(image_metadata, alert_data):
+
+def update_flask_data(image_metadata, alert_data, change_detection_image_path=None):
     # Convert datetime objects to strings
     if 'timestamp' in image_metadata:
         image_metadata['timestamp'] = image_metadata['timestamp'].isoformat()
     
     # Convert alert_data timestamp if present
-    if 'alert_timestamp' in alert_data:
+    if alert_data is not None and 'alert_timestamp' in alert_data:
         alert_data['alert_timestamp'] = alert_data['alert_timestamp'].isoformat()
 
+    # Prepare Flask URL
     flask_url = 'http://127.0.0.1:5000'
 
+    # Update image metadata
     response_image_metadata = requests.post(f"{flask_url}/update_image_metadata", json=image_metadata)
-    response_alert_data = requests.post(f"{flask_url}/update_alert_data", json=alert_data)
+    print(f"Image metadata response status code: {response_image_metadata.status_code}")
+    print(f"Image metadata response text: {response_image_metadata.text}")
     
-    print(f"Image metadata response: {response_image_metadata.json()}")
-    print(f"Alert data response: {response_alert_data.json()}")
+    # Update alert data if it is not None
+    if alert_data is not None:
+        response_alert_data = requests.post(f"{flask_url}/update_alert_data", json=alert_data)
+        print(f"Alert data response status code: {response_alert_data.status_code}")
+        print(f"Alert data response text: {response_alert_data.text}")
+    else:
+        print("No alert data to update.")
 
+    # Upload change detection image if path is provided
+    if change_detection_image_path:
+        with open(change_detection_image_path, 'rb') as img_file:
+            files = {'file': img_file}
+            response_image_upload = requests.post(f"{flask_url}/upload_change_detection_image", files=files)
+            print(f"Change detection image upload response status code: {response_image_upload.status_code}")
+            print(f"Change detection image upload response text: {response_image_upload.text}")
+
+            
+
+def get_timestamped_filename(prefix):
+    now = datetime.now()
+    return f"{prefix}_{now.strftime('%Y%m%d_%H%M%S')}.png"
 
 # Fetch the latest image for a given location
 
@@ -72,7 +96,7 @@ def insert_new_image(connection, image_path, latitude, longitude, drone_id, addr
         INSERT INTO images (image_path, latitude, longitude, timestamp, drone_id, address, region, drone_path) 
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
         """
-        timestamp = datetime.datetime.now()  # Current timestamp
+        timestamp = datetime.now()  # Correctly use datetime.now() # Current timestamp
         cursor.execute(insert_query, (image_path, latitude, longitude, timestamp, drone_id, address, region, drone_path))
         connection.commit()
         cursor.close()
@@ -144,8 +168,14 @@ def compare_image(model, image1_path, image2_path, device='cpu'):
 
 # Visualize changes
 def visualize_changes(before_image_path, after_image_path, change_percentage):
-    # Load the model
     
+    # Create directory for saving images if not exists
+    output_dir = os.path.join('static', 'images')
+    os.makedirs(output_dir, exist_ok=True)
+    # Generate unique filenames
+    change_detection_filename = get_timestamped_filename('change_detection')
+    change_detection_image_path = os.path.join(output_dir, change_detection_filename)
+
 
     # Compare images and get change probability and contours
     change_prob_np, contours = compare_image(model, before_image_path, after_image_path, device='cpu')
@@ -186,7 +216,10 @@ def visualize_changes(before_image_path, after_image_path, change_percentage):
     axes[2].axis('off')
 
     plt.tight_layout()
+    plt.savefig(change_detection_image_path)
     plt.show()
+    
+    return change_detection_image_path
 
 def generate_alert(connection, image_id, severity, details, alertstatus):
     try:
@@ -195,7 +228,7 @@ def generate_alert(connection, image_id, severity, details, alertstatus):
         INSERT INTO alerts (image_id, alert_timestamp, severity_level, alert_details, alertstatus) 
         VALUES (%s, %s, %s, %s, %s);
         """
-        timestamp = datetime.datetime.now()
+        timestamp = datetime.now()
         cursor.execute(insert_query, (image_id, timestamp, severity, details, alertstatus))
         connection.commit()
         cursor.close()
@@ -252,7 +285,7 @@ if __name__ == "__main__":
                     "image_path": before_image_path,
                     "latitude": lat,
                     "longitude": long,
-                    "timestamp": datetime.datetime.now(),
+                    "timestamp": datetime.now(),
                     "drone_id": "HAWK1104",
                     "address": address,
                     "region": "NorthWest",
