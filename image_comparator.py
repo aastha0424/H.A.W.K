@@ -1,5 +1,6 @@
 import datetime
 import cv2
+import requests
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -25,7 +26,26 @@ def connect_db():
         print(f"Error connecting to database: {e}")
         return None
 
+def update_flask_data(image_metadata, alert_data):
+    # Convert datetime objects to strings
+    if 'timestamp' in image_metadata:
+        image_metadata['timestamp'] = image_metadata['timestamp'].isoformat()
+    
+    # Convert alert_data timestamp if present
+    if 'alert_timestamp' in alert_data:
+        alert_data['alert_timestamp'] = alert_data['alert_timestamp'].isoformat()
+
+    flask_url = 'http://127.0.0.1:5000'
+
+    response_image_metadata = requests.post(f"{flask_url}/update_image_metadata", json=image_metadata)
+    response_alert_data = requests.post(f"{flask_url}/update_alert_data", json=alert_data)
+    
+    print(f"Image metadata response: {response_image_metadata.json()}")
+    print(f"Alert data response: {response_alert_data.json()}")
+
+
 # Fetch the latest image for a given location
+
 def fetch_latest_image(connection, latitude, longitude):
     try:
         cursor = connection.cursor()
@@ -45,36 +65,34 @@ def fetch_latest_image(connection, latitude, longitude):
         return None
 
 # Insert new image metadata
-def insert_new_image(connection, image_path, latitude, longitude, drone_id):
+def insert_new_image(connection, image_path, latitude, longitude, drone_id, address, region, drone_path):
     try:
         cursor = connection.cursor()
         insert_query = """
-        INSERT INTO images (image_path, latitude, longitude, timestamp, drone_id) 
-        VALUES (%s, %s, %s, %s, %s);
+        INSERT INTO images (image_path, latitude, longitude, timestamp, drone_id, address, region, drone_path) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
         """
         timestamp = datetime.datetime.now()  # Current timestamp
-        cursor.execute(insert_query, (image_path, latitude, longitude, timestamp, drone_id))
+        cursor.execute(insert_query, (image_path, latitude, longitude, timestamp, drone_id, address, region, drone_path))
         connection.commit()
         cursor.close()
+        
+        image_metadata = {
+            "image_path": image_path,
+            "latitude": latitude,
+            "longitude": longitude,
+            "timestamp": timestamp,
+            "drone_id": drone_id,
+            "address": address,
+            "region": region,
+            "drone_path": drone_path
+        }
+        
         print("New image metadata inserted.")
+        return image_metadata
     except Exception as e:
         print(f"Error inserting new image: {e}")
 
-# Insert alert data into the database
-def insert_alert(connection, image_id, severity_level, alert_details):
-    try:
-        cursor = connection.cursor()
-        insert_query = """
-        INSERT INTO alerts (image_id, alert_timestamp, severity_level, alert_details) 
-        VALUES (%s, %s, %s, %s);
-        """
-        timestamp = datetime.datetime.now()  # Current timestamp
-        cursor.execute(insert_query, (image_id, timestamp, severity_level, alert_details))
-        connection.commit()
-        cursor.close()
-        print("Alert inserted.")
-    except Exception as e:
-        print(f"Error inserting alert: {e}")
 
 # Close the connection
 def close_connection(connection):
@@ -97,6 +115,7 @@ def compare_images(model, image1_path, image2_path):
     change_percentage = np.sum(diff) / (img1.size * 255) * 100
 
     return change_percentage  # Ensure only the percentage is returned
+
 def compare_image(model, image1_path, image2_path, device='cpu'):
     # Load and preprocess images
     t1_image = transform(load_image(image1_path)).unsqueeze(0).to(device)  # Add batch dimension and move to device
@@ -169,21 +188,34 @@ def visualize_changes(before_image_path, after_image_path, change_percentage):
     plt.tight_layout()
     plt.show()
 
-def generate_alert(connection, image_id, severity, details):
+def generate_alert(connection, image_id, severity, details, alertstatus):
     try:
         cursor = connection.cursor()
         insert_query = """
-        INSERT INTO alerts (image_id, alert_timestamp, severity_level, alert_details) 
-        VALUES (%s, %s, %s, %s);
+        INSERT INTO alerts (image_id, alert_timestamp, severity_level, alert_details, alertstatus) 
+        VALUES (%s, %s, %s, %s, %s);
         """
         timestamp = datetime.datetime.now()
-        cursor.execute(insert_query, (image_id, timestamp, severity, details))
+        cursor.execute(insert_query, (image_id, timestamp, severity, details, alertstatus))
         connection.commit()
         cursor.close()
+        
+        # Alert successfully generated
+        alert_data = {
+            "image_id": image_id,
+            "alert_timestamp": timestamp,
+            "severity_level": severity,
+            "alert_details": details,
+            "alert_status": alertstatus,
+        }
+        
         print(f"Alert generated for image_id {image_id} with severity {severity}: {details}")
+        print("Alert is Unresolved!!")
+        return alert_data
     except Exception as e:
         print(f"Error generating alert: {e}")
 
+# Main execution flow
 # Main execution flow
 if __name__ == "__main__":
     # Load the model
@@ -195,7 +227,8 @@ if __name__ == "__main__":
     if conn:
         # Define latitude and longitude for fetching the before image
         lat, long = 40.7128, -74.0060  # Example coordinates (New York)
-
+        address = "b 18 sector MP subhanagar"
+        
         # Fetch the latest image from the database
         result = fetch_latest_image(conn, lat, long)
         if result:
@@ -212,7 +245,20 @@ if __name__ == "__main__":
                 print(f"Significant change detected: {change_percentage:.2f}%")
                 
                 # Insert alert into the database
-                generate_alert(conn, 1, 'High', f'Change detected: {change_percentage:.2f}%')  # Assume image_id = 1 for example
+                alert_data = generate_alert(conn, 1, 'High', f'Change detected: {change_percentage:.2f}%', "Unresolved")  # Assume image_id = 1 for example
+                
+                # Update Flask server with image metadata and alert data
+                image_metadata = {
+                    "image_path": before_image_path,
+                    "latitude": lat,
+                    "longitude": long,
+                    "timestamp": datetime.datetime.now(),
+                    "drone_id": "HAWK1104",
+                    "address": address,
+                    "region": "NorthWest",
+                    "drone_path": "HAWK 2/A/10"
+                }
+                update_flask_data(image_metadata, alert_data)
             else:
                 print(f"No significant change detected: {change_percentage:.2f}%")
 
@@ -225,7 +271,10 @@ if __name__ == "__main__":
             new_image_path = r'C:\codes\Projects\H.A.W.K\after.png'
             
             # Insert the new image into the database
-            insert_new_image(conn, new_image_path, lat, long, "drone_demo")
+            image_metadata = insert_new_image(conn, new_image_path, lat, long, "HAWK1104" , address, "NorthWest" , "HAWK 2/A/10")
+            
+            # Update Flask server with the new image metadata (no alerts in this case)
+            update_flask_data(image_metadata, {})
         
         # Close the connection
         close_connection(conn)

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Data Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flask Data Viewer</h1>
+
+    <h2>Image Metadata</h2>
+    <table id="imageMetadataTable">
+        <thead>
+            <tr>
+                <!-- Table headers will be added dynamically -->
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="8">Loading...</td></tr>
+        </tbody>
+    </table>
+
+    <h2>Alert Data</h2>
+    <table id="alertDataTable">
+        <thead>
+            <tr>
+                <!-- Table headers will be added dynamically -->
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        async function fetchData() {
+            try {
+                const flaskUrl = 'http://127.0.0.1:5000';
+    
+                // Fetch image metadata
+                let response = await fetch(`${flaskUrl}/get_image_metadata`);
+                let data = await response.json();
+                let imageMetadataTable = document.getElementById('imageMetadataTable');
+                let imageMetadataTableHead = imageMetadataTable.querySelector('thead tr');
+                let imageMetadataTableBody = imageMetadataTable.querySelector('tbody');
+    
+                if (data && Object.keys(data).length > 0) {
+                    imageMetadataTableHead.innerHTML = '';
+                    imageMetadataTableBody.innerHTML = '';
+    
+                    let headers = Object.keys(data);
+                    headers.forEach(header => {
+                        let th = document.createElement('th');
+                        th.textContent = header;
+                        imageMetadataTableHead.appendChild(th);
+                    });
+    
+                    let row = imageMetadataTableBody.insertRow();
+                    headers.forEach(header => {
+                        let cell = row.insertCell();
+                        cell.textContent = data[header];
+                    });
+                } else {
+                    imageMetadataTableBody.innerHTML = '<tr><td colspan="8">No data available</td></tr>';
+                }
+    
+                // Fetch alert data
+                response = await fetch(`${flaskUrl}/get_alert_data`);
+                data = await response.json();
+                let alertDataTable = document.getElementById('alertDataTable');
+                let alertDataTableHead = alertDataTable.querySelector('thead tr');
+                let alertDataTableBody = alertDataTable.querySelector('tbody');
+    
+                if (data && Object.keys(data).length > 0) {
+                    alertDataTableHead.innerHTML = '';
+                    alertDataTableBody.innerHTML = '';
+    
+                    let headers = Object.keys(data);
+                    headers.forEach(header => {
+                        let th = document.createElement('th');
+                        th.textContent = header;
+                        alertDataTableHead.appendChild(th);
+                    });
+    
+                    let row = alertDataTableBody.insertRow();
+                    headers.forEach(header => {
+                        let cell = row.insertCell();
+                        cell.textContent = data[header];
+                    });
+                } else {
+                    alertDataTableBody.innerHTML = '<tr><td colspan="5">No data available</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+    
+        // Fetch data when the page loads and periodically
+        window.onload = fetchData;
+        setInterval(fetchData, 60000); // Update every 60 seconds
+    </script>
+    
+</body>
+</html>
